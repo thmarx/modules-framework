@@ -22,6 +22,7 @@ package com.condation.modules.manager;
  * #L%
  */
 
+import com.condation.modules.api.ModulePermission;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
@@ -35,11 +36,17 @@ import java.util.*;
 public class ModuledFirstURLClassLoader extends URLClassLoader {
 
     private final ModuleAPIClassLoader moduleAPIClassLoader;
+    private final List<ModulePermission> permissions;
 
     public ModuledFirstURLClassLoader(URL[] classpath, ModuleAPIClassLoader moduleAPIClassLoader) {
+        this(classpath, moduleAPIClassLoader, Collections.emptyList());
+    }
+
+    public ModuledFirstURLClassLoader(URL[] classpath, ModuleAPIClassLoader moduleAPIClassLoader, List<ModulePermission> permissions) {
         // Use system classloader as parent to avoid unwanted delegation
         super(classpath, ClassLoader.getSystemClassLoader());
         this.moduleAPIClassLoader = moduleAPIClassLoader;
+        this.permissions = permissions;
     }
 
     @Override
@@ -50,6 +57,9 @@ public class ModuledFirstURLClassLoader extends URLClassLoader {
             if (resolve) resolveClass(loadedClass);
             return loadedClass;
         }
+
+        // Check permissions
+        checkPermission(name);
 
 		// System and JDK classes → always from parent/system
         if (isSystemClass(name)) {
@@ -75,6 +85,36 @@ public class ModuledFirstURLClassLoader extends URLClassLoader {
 			// Fallback: maybe system/parent has it (e.g. JDK or shared lib)
             return super.loadClass(name, resolve);
         }
+    }
+
+    private void checkPermission(String name) {
+        if (isRestricted(name)) {
+            if (!isAllowed(name)) {
+                throw new SecurityException("Access to restricted class denied: " + name + ". Module needs appropriate permission.");
+            }
+        }
+    }
+
+    private boolean isRestricted(String name) {
+        return name.startsWith("java.io.")
+                || name.startsWith("java.nio.")
+                || name.startsWith("java.net.")
+                || name.startsWith("jdk.net.")
+                || name.startsWith("sun.net.")
+                || name.startsWith("java.sql.")
+                || name.startsWith("javax.sql.")
+                || name.startsWith("java.lang.reflect.");
+    }
+
+    private boolean isAllowed(String name) {
+        for (ModulePermission permission : permissions) {
+            for (String pkg : permission.getPackages()) {
+                if (name.startsWith(pkg)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private boolean isSystemClass(String name) {

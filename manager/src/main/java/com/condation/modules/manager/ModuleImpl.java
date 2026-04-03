@@ -26,6 +26,7 @@ import com.condation.modules.api.ExtensionPoint;
 import com.condation.modules.api.Module;
 import com.condation.modules.api.Module.Priority;
 import com.condation.modules.api.ModuleConfiguration;
+import com.condation.modules.api.ModulePermission;
 import com.condation.modules.api.ModuleRequestContextFactory;
 import java.io.File;
 import java.io.FileReader;
@@ -57,6 +58,7 @@ public class ModuleImpl implements Module {
 	private String author;
 	private Priority priority = Priority.NORMAL;
 	private final List<Dependency> dependencyList = new ArrayList<>();
+	private final List<ModulePermission> permissions = new ArrayList<>();
 	private final ModuleRequestContextFactory requestContextFactory;
 
 	File moduleDir;
@@ -103,6 +105,17 @@ public class ModuleImpl implements Module {
 			}
 			String config_prio = properties.getProperty("priority", "NORMAL");
 			this.priority = Priority.valueOf(config_prio);
+
+			String permissions_prop = properties.getProperty("permissions");
+			if (permissions_prop != null && !permissions_prop.isEmpty()) {
+				for (String perm : permissions_prop.split(";")) {
+					try {
+						this.permissions.add(ModulePermission.valueOf(perm.toUpperCase().trim()));
+					} catch (IllegalArgumentException e) {
+						// ignore unknown permissions
+					}
+				}
+			}
 		}
 	}
 
@@ -110,12 +123,15 @@ public class ModuleImpl implements Module {
 		List<URL> urls = new ArrayList<>();
 
 		File[] libs = new File(moduleDir, "libs").listFiles((File dir, String name1) -> name1.endsWith(".jar"));
-		for (File lib : libs) {
-			urls.add(new URL("jar:" + lib.toURI().toURL() + "!/"));
-			lib = null;
+		int libsLength = libs != null ? libs.length : 0;
+		if (libs != null) {
+			for (File lib : libs) {
+				urls.add(new URL("jar:" + lib.toURI().toURL() + "!/"));
+				lib = null;
+			}
 		}
 
-		classloader = new ModuledFirstURLClassLoader(urls.toArray(new URL[libs.length]), parentClassLoader);
+		classloader = new ModuledFirstURLClassLoader(urls.toArray(new URL[libsLength]), parentClassLoader, permissions);
 		urls.clear();
 		urls = null;
 		libs = null;
@@ -216,6 +232,10 @@ public class ModuleImpl implements Module {
 
 	public List<Dependency> getDependencies() {
 		return this.dependencyList;
+	}
+
+	public List<ModulePermission> getPermissions() {
+		return this.permissions;
 	}
 
 	public File getModuleDir() {

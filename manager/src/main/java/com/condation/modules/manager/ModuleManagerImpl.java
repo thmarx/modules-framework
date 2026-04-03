@@ -318,6 +318,7 @@ public class ModuleManagerImpl implements ModuleManager {
 		description.setVersion(module.getVersion());
 		description.setName(module.getName());
 		description.setDescription(module.getDescription());
+		description.setPermissions(module.getPermissions());
 		return description;
 	}
 
