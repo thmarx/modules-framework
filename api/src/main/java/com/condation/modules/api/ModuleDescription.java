@@ -22,7 +22,8 @@ package com.condation.modules.api;
  * #L%
  */
 
-
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  *
@@ -32,10 +33,19 @@ public class ModuleDescription {
 	private String name;
 	private String description;
 	private String version;
+	private List<ModulePermission> permissions = new ArrayList<>();
 	
 	public ModuleDescription () {
 		
 	}
+
+    public List<ModulePermission> getPermissions() {
+        return permissions;
+    }
+
+    public void setPermissions(List<ModulePermission> permissions) {
+        this.permissions = permissions;
+    }
 
     public String getName() {
         return name;
