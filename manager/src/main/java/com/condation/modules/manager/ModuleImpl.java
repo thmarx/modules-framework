@@ -26,6 +26,7 @@ import com.condation.modules.api.ExtensionPoint;
 import com.condation.modules.api.Module;
 import com.condation.modules.api.Module.Priority;
 import com.condation.modules.api.ModuleConfiguration;
+import com.condation.modules.api.annotation.Extension;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
@@ -34,12 +35,13 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.ServiceLoader;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  *
@@ -66,7 +68,9 @@ public class ModuleImpl implements Module {
 	private final Context context;
 	private final ModuleInjector injector;
 
-	Map<Class, List> extensions = new HashMap<>();
+	private final ConcurrentMap<Class<?>, ExtensionPoint> cachedInstances = new ConcurrentHashMap<>();
+
+	private boolean cacheExtensions = false;
 
 	private ModuleServiceLoader moduleServiceLoader;
 
@@ -98,6 +102,7 @@ public class ModuleImpl implements Module {
 			}
 			String config_prio = properties.getProperty("priority", "NORMAL");
 			this.priority = Priority.valueOf(config_prio);
+			this.cacheExtensions = Boolean.parseBoolean(properties.getProperty("extensions.cache", "false"));
 		}
 	}
 
@@ -133,26 +138,50 @@ public class ModuleImpl implements Module {
 
 	@Override
 	public <T extends ExtensionPoint> List<T> extensions(Class<T> extensionClass) {
+		List<T> results = new ArrayList<>();
+		List<Class<? extends T>> classes = moduleServiceLoader.getClasses(extensionClass);
+		for (Class<? extends T> clazz : classes) {
+			if (shouldCache(clazz, extensionClass)) {
+				results.add((T) cachedInstances.computeIfAbsent(clazz, c -> loadExtension(extensionClass, (Class<? extends T>) c)));
+			} else {
+				results.add(loadExtension(extensionClass, clazz));
+			}
+		}
+		return results;
+	}
 
-		return moduleServiceLoader.get(extensionClass).stream()
-				.map(ext -> {
-					try {
-						// Proxy erstellen, das alle Methoden mit ThreadClassLoader umhüllt
-						T proxy = interceptor.createProxy(extensionClass, classloader, ext);
+	private boolean shouldCache(Class<?> implementationClass, Class<? extends ExtensionPoint> extensionClass) {
+		Extension[] annotations = implementationClass.getAnnotationsByType(Extension.class);
+		Extension extensionAnnotation = Arrays.stream(annotations)
+				.filter(a -> a.value().equals(extensionClass))
+				.findFirst()
+				.orElse(null);
 
-						proxy.setContext(context);
-						proxy.setConfiguration(configuration);
+		if (extensionAnnotation != null && extensionAnnotation.cached() != Extension.Caching.DEFAULT) {
+			return extensionAnnotation.cached() == Extension.Caching.TRUE;
+		}
 
-						if (injector != null) {
-							injector.inject(proxy);
-						}
+		return cacheExtensions;
+	}
 
-						proxy.init();
-						return proxy;
-					} catch (Exception e) {
-						throw new RuntimeException("Failed to create classloader proxy for extension", e);
-					}
-				}).toList();
+	private <T extends ExtensionPoint> T loadExtension(Class<T> extensionClass, Class<? extends T> implementationClass) {
+		try {
+			T ext = (T) implementationClass.getConstructors()[0].newInstance();
+			// Proxy erstellen, das alle Methoden mit ThreadClassLoader umhüllt
+			T proxy = interceptor.createProxy(extensionClass, classloader, ext);
+
+			proxy.setContext(context);
+			proxy.setConfiguration(configuration);
+
+			if (injector != null) {
+				injector.inject(proxy);
+			}
+
+			proxy.init();
+			return proxy;
+		} catch (Exception e) {
+			throw new RuntimeException("Failed to create extension instance for " + implementationClass.getName(), e);
+		}
 	}
 
 	@Override
@@ -256,8 +285,7 @@ public class ModuleImpl implements Module {
 		this.interceptor = null;
 		this.configuration = null;
 		this.dependencyList.clear();
-		this.extensions.clear();
-		this.extensions = null;
+		this.cachedInstances.clear();
 		this.modulesDataDir = null;
 		this.moduleDir = null;
 	}
