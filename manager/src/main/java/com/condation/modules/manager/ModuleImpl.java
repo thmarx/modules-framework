@@ -26,7 +26,6 @@ import com.condation.modules.api.ExtensionPoint;
 import com.condation.modules.api.Module;
 import com.condation.modules.api.Module.Priority;
 import com.condation.modules.api.ModuleConfiguration;
-import com.condation.modules.api.ModuleRequestContextFactory;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
@@ -41,8 +40,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.ServiceLoader;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 /**
  *
@@ -57,7 +54,6 @@ public class ModuleImpl implements Module {
 	private String author;
 	private Priority priority = Priority.NORMAL;
 	private final List<Dependency> dependencyList = new ArrayList<>();
-	private final ModuleRequestContextFactory requestContextFactory;
 
 	File moduleDir;
 
@@ -77,12 +73,11 @@ public class ModuleImpl implements Module {
 	private ClassLoaderInterceptor interceptor;
 
 	protected ModuleImpl(final File moduleDir, final File modulesDataDir, final Context context,
-			final ModuleInjector injector, final ModuleRequestContextFactory requestContextFactory) throws MalformedURLException, IOException {
+			final ModuleInjector injector) throws MalformedURLException, IOException {
 		this.moduleDir = moduleDir;
 		this.modulesDataDir = modulesDataDir;
 		this.context = context;
 		this.injector = injector;
-		this.requestContextFactory = requestContextFactory;
 
 		Properties properties = new Properties();
 		try (FileReader reader = new FileReader(new File(moduleDir, "module.properties"))) {
@@ -147,10 +142,6 @@ public class ModuleImpl implements Module {
 
 						proxy.setContext(context);
 						proxy.setConfiguration(configuration);
-
-						if (requestContextFactory != null) {
-							proxy.setRequestContext(requestContextFactory.createContext());
-						}
 
 						if (injector != null) {
 							injector.inject(proxy);

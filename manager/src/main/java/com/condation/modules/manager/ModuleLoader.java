@@ -27,7 +27,6 @@ package com.condation.modules.manager;
 import com.condation.modules.api.Context;
 import com.condation.modules.api.ManagerConfiguration;
 import com.condation.modules.api.ModuleLifeCycleExtension;
-import com.condation.modules.api.ModuleRequestContextFactory;
 import java.io.File;
 import java.io.IOException;
 import java.util.Collections;
@@ -53,18 +52,14 @@ public class ModuleLoader {
 	final Context context;
 	final ModuleInjector injector;
 	
-	final ModuleRequestContextFactory requestContextFactory;
-
 	protected ModuleLoader(final ManagerConfiguration configuration, final File modulesPath, final File modulesDataPath, 
-			final ModuleAPIClassLoader globalClassLoader, final Context context, final ModuleInjector injector,
-			final ModuleRequestContextFactory requestContextFactory) {
+			final ModuleAPIClassLoader globalClassLoader, final Context context, final ModuleInjector injector) {
 		this.configuration = configuration;
 		this.modulesPath = modulesPath;
 		this.modulesDataPath = modulesDataPath;
 		this.globalClassLoader = globalClassLoader;
 		this.context = context;
 		this.injector = injector;
-		this.requestContextFactory = requestContextFactory;
 	}
 
 	protected Map<String, ModuleImpl> activeModules() {
@@ -91,7 +86,7 @@ public class ModuleLoader {
 		File moduleData = modulesDataPath;
 //		File moduleData = activeModules().get(moduleId).getModulesDataDir();
 
-		ModuleImpl module = new ModuleImpl(moduleDir, moduleData, this.context, this.injector, this.requestContextFactory);
+		ModuleImpl module = new ModuleImpl(moduleDir, moduleData, this.context, this.injector);
 
 		if (areDependencyFulfilled(module)) {
 			ManagerConfiguration.ModuleConfig config = configuration.get(moduleId);

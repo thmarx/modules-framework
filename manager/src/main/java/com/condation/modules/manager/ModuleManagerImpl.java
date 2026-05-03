@@ -28,7 +28,6 @@ import com.condation.modules.api.Module;
 import com.condation.modules.api.ModuleDescription;
 import com.condation.modules.api.ModuleLifeCycleExtension;
 import com.condation.modules.api.ModuleManager;
-import com.condation.modules.api.ModuleRequestContextFactory;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -58,12 +57,7 @@ public class ModuleManagerImpl implements ModuleManager {
 		private Context context = null;
 		private ModuleAPIClassLoader classLoader = null;
 		private ModuleInjector injector = null;
-		private ModuleRequestContextFactory requestContextFactory = null;
-
-		public Builder requestContextFactory(ModuleRequestContextFactory requestContextFactory) {
-			this.requestContextFactory = requestContextFactory;
-			return this;
-		}
+		
 
 		public ModuleManager build() {
 			return new ModuleManagerImpl(this);
@@ -170,8 +164,6 @@ public class ModuleManagerImpl implements ModuleManager {
 
 	final ModuleInjector injector;
 
-	final ModuleRequestContextFactory requestContextFactory;
-
 	final ModuleServiceLoader systemExtensionLoader;
 
 	public ModuleManagerImpl() {
@@ -181,7 +173,6 @@ public class ModuleManagerImpl implements ModuleManager {
 		this.moduleLoader = null;
 		this.context = null;
 		this.injector = null;
-		this.requestContextFactory = null;
 		this.systemExtensionLoader = null;
 	}
 
@@ -190,12 +181,11 @@ public class ModuleManagerImpl implements ModuleManager {
 		this.modulesDataPath = builder.modulesDataPath;
 		this.context = builder.context;
 		this.injector = builder.injector;
-		this.requestContextFactory = builder.requestContextFactory;
 
 		this.configuration = new ManagerConfiguration();
 		this.globalClassLoader = builder.classLoader;
 		this.moduleLoader = new ModuleLoader(configuration, modulesPath, modulesDataPath, this.globalClassLoader,
-				this.context, this.injector, this.requestContextFactory);
+				this.context, this.injector);
 
 		File[] moduleFiles = modulesPath.listFiles((File file) -> file.isDirectory());
 		File moduleData = modulesDataPath;
@@ -240,8 +230,7 @@ public class ModuleManagerImpl implements ModuleManager {
 	private void loadModules(File[] moduleFiles, File moduleData, Set<String> allUsedModuleIDs, Map<String, ModuleImpl> modules) {
 		for (File module : moduleFiles) {
 			try {
-				ModuleImpl mod = new ModuleImpl(module, moduleData, this.context, this.injector, this.requestContextFactory
-				);
+				ModuleImpl mod = new ModuleImpl(module, moduleData, this.context, this.injector);
 				allUsedModuleIDs.add(mod.getId());
 				modules.put(mod.getId(), mod);
 				if (configuration.get(mod.getId()) == null) {
@@ -288,7 +277,7 @@ public class ModuleManagerImpl implements ModuleManager {
 			try {
 				File moduleDir = new File(modulesPath, configuration.get(mc.getId()).getModuleDir());
 				File moduleData = modulesDataPath;
-				ModuleImpl module = new ModuleImpl(moduleDir, moduleData, this.context, this.injector, this.requestContextFactory);
+				ModuleImpl module = new ModuleImpl(moduleDir, moduleData, this.context, this.injector);
 				return module;
 			} catch (IOException ex) {
 				throw new RuntimeException(ex);
@@ -311,7 +300,7 @@ public class ModuleManagerImpl implements ModuleManager {
 		} else {
 			ManagerConfiguration.ModuleConfig mc = configuration.get(id);
 			File moduleDir = new File(modulesPath, configuration.get(mc.getId()).getModuleDir());
-			module = new ModuleImpl(moduleDir, null, this.context, this.injector, this.requestContextFactory);
+			module = new ModuleImpl(moduleDir, null, this.context, this.injector);
 		}
 
 		ModuleDescription description = new ModuleDescription();
@@ -381,10 +370,6 @@ public class ModuleManagerImpl implements ModuleManager {
 				.stream()
 				.map(ext -> {
 					ext.setContext(context);
-					
-					if (requestContextFactory != null) {
-						ext.setRequestContext(requestContextFactory.createContext());
-					}
 
 					if (injector != null) {
 						injector.inject(ext);

@@ -29,14 +29,12 @@ package com.condation.modules.api;
  * @author marx
  * @param <C>
  */
-public abstract class BaseExtension<C extends Context, R extends ModuleRequestContext> implements ExtensionPoint<C, R> {
+public abstract class BaseExtension<C extends Context> implements ExtensionPoint<C> {
 
 	protected ModuleConfiguration configuration;
 	
 	private C context;
 	
-	private R requestContext;
-
 	@Override
 	public void setContext(C context) {
 		this.context = context;
@@ -44,15 +42,6 @@ public abstract class BaseExtension<C extends Context, R extends ModuleRequestCo
 	
 	public C getContext () {
 		return this.context;
-	}
-	
-	@Override
-	public void setRequestContext(R requestContext) {
-		this.requestContext = requestContext;
-	}
-	
-	public R getRequestContext () {
-		return this.requestContext;
 	}
 	
 	@Override
