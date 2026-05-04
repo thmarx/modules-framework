@@ -28,16 +28,19 @@ import com.condation.modules.api.Module;
 import com.condation.modules.api.ModuleDescription;
 import com.condation.modules.api.ModuleLifeCycleExtension;
 import com.condation.modules.api.ModuleManager;
-import com.condation.modules.api.ModuleRequestContextFactory;
+import com.condation.modules.api.annotation.Extension;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,12 +61,7 @@ public class ModuleManagerImpl implements ModuleManager {
 		private Context context = null;
 		private ModuleAPIClassLoader classLoader = null;
 		private ModuleInjector injector = null;
-		private ModuleRequestContextFactory requestContextFactory = null;
-
-		public Builder requestContextFactory(ModuleRequestContextFactory requestContextFactory) {
-			this.requestContextFactory = requestContextFactory;
-			return this;
-		}
+		
 
 		public ModuleManager build() {
 			return new ModuleManagerImpl(this);
@@ -170,9 +168,9 @@ public class ModuleManagerImpl implements ModuleManager {
 
 	final ModuleInjector injector;
 
-	final ModuleRequestContextFactory requestContextFactory;
-
 	final ModuleServiceLoader systemExtensionLoader;
+
+	private final ConcurrentMap<Class<?>, ExtensionPoint> systemExtensionsCache = new ConcurrentHashMap<>();
 
 	public ModuleManagerImpl() {
 		this.modulesDataPath = null;
@@ -181,7 +179,6 @@ public class ModuleManagerImpl implements ModuleManager {
 		this.moduleLoader = null;
 		this.context = null;
 		this.injector = null;
-		this.requestContextFactory = null;
 		this.systemExtensionLoader = null;
 	}
 
@@ -190,12 +187,11 @@ public class ModuleManagerImpl implements ModuleManager {
 		this.modulesDataPath = builder.modulesDataPath;
 		this.context = builder.context;
 		this.injector = builder.injector;
-		this.requestContextFactory = builder.requestContextFactory;
 
 		this.configuration = new ManagerConfiguration();
 		this.globalClassLoader = builder.classLoader;
 		this.moduleLoader = new ModuleLoader(configuration, modulesPath, modulesDataPath, this.globalClassLoader,
-				this.context, this.injector, this.requestContextFactory);
+				this.context, this.injector);
 
 		File[] moduleFiles = modulesPath.listFiles((File file) -> file.isDirectory());
 		File moduleData = modulesDataPath;
@@ -240,8 +236,7 @@ public class ModuleManagerImpl implements ModuleManager {
 	private void loadModules(File[] moduleFiles, File moduleData, Set<String> allUsedModuleIDs, Map<String, ModuleImpl> modules) {
 		for (File module : moduleFiles) {
 			try {
-				ModuleImpl mod = new ModuleImpl(module, moduleData, this.context, this.injector, this.requestContextFactory
-				);
+				ModuleImpl mod = new ModuleImpl(module, moduleData, this.context, this.injector);
 				allUsedModuleIDs.add(mod.getId());
 				modules.put(mod.getId(), mod);
 				if (configuration.get(mod.getId()) == null) {
@@ -266,6 +261,7 @@ public class ModuleManagerImpl implements ModuleManager {
 			mle.setContext(context);
 			mle.deactivate();
 		});
+		systemExtensionsCache.clear();
 	}
 
 	/**
@@ -288,7 +284,7 @@ public class ModuleManagerImpl implements ModuleManager {
 			try {
 				File moduleDir = new File(modulesPath, configuration.get(mc.getId()).getModuleDir());
 				File moduleData = modulesDataPath;
-				ModuleImpl module = new ModuleImpl(moduleDir, moduleData, this.context, this.injector, this.requestContextFactory);
+				ModuleImpl module = new ModuleImpl(moduleDir, moduleData, this.context, this.injector);
 				return module;
 			} catch (IOException ex) {
 				throw new RuntimeException(ex);
@@ -311,7 +307,7 @@ public class ModuleManagerImpl implements ModuleManager {
 		} else {
 			ManagerConfiguration.ModuleConfig mc = configuration.get(id);
 			File moduleDir = new File(modulesPath, configuration.get(mc.getId()).getModuleDir());
-			module = new ModuleImpl(moduleDir, null, this.context, this.injector, this.requestContextFactory);
+			module = new ModuleImpl(moduleDir, null, this.context, this.injector);
 		}
 
 		ModuleDescription description = new ModuleDescription();
@@ -377,26 +373,47 @@ public class ModuleManagerImpl implements ModuleManager {
 			}
 		});
 		// system modules
-		systemExtensionLoader.get(extensionClass)
-				.stream()
-				.map(ext -> {
-					ext.setContext(context);
-					
-					if (requestContextFactory != null) {
-						ext.setRequestContext(requestContextFactory.createContext());
-					}
-
-					if (injector != null) {
-						injector.inject(ext);
-					}
-
-					ext.init();
-
-					return ext;
-				})
-				.forEach(extensions::add);
+		List<Class<? extends T>> classes = systemExtensionLoader.getClasses(extensionClass);
+		for (Class<? extends T> clazz : classes) {
+			if (shouldCacheSystemExtension(clazz, extensionClass)) {
+				extensions.add((T) systemExtensionsCache.computeIfAbsent(clazz, c -> loadSystemExtension((Class<? extends T>) c)));
+			} else {
+				extensions.add(loadSystemExtension(clazz));
+			}
+		}
 
 		return extensions;
+	}
+
+	private boolean shouldCacheSystemExtension(Class<?> implementationClass, Class<? extends ExtensionPoint> extensionClass) {
+		Extension[] annotations = implementationClass.getAnnotationsByType(Extension.class);
+		Extension extensionAnnotation = Arrays.stream(annotations)
+				.filter(a -> a.value().equals(extensionClass))
+				.findFirst()
+				.orElse(null);
+
+		if (extensionAnnotation != null && extensionAnnotation.cached() != Extension.Caching.DEFAULT) {
+			return extensionAnnotation.cached() == Extension.Caching.TRUE;
+		}
+
+		return false; // Default for system extensions is OFF
+	}
+
+	private <T extends ExtensionPoint> T loadSystemExtension(Class<? extends T> implementationClass) {
+		try {
+			T ext = (T) implementationClass.getConstructors()[0].newInstance();
+			ext.setContext(context);
+
+			if (injector != null) {
+				injector.inject(ext);
+			}
+
+			ext.init();
+
+			return ext;
+		} catch (Exception e) {
+			throw new RuntimeException("Failed to create system extension instance for " + implementationClass.getName(), e);
+		}
 	}
 
 	/**

@@ -31,12 +31,10 @@ package com.condation.modules.api;
  * @author marx
  * @param <C>
  */
-public interface ExtensionPoint<C extends Context, R extends ModuleRequestContext> {
+public interface ExtensionPoint<C extends Context> {
 	void setConfiguration (ModuleConfiguration configuration);
 	
 	void setContext (C context);
-	
-	void setRequestContext (R context);
 	
 	void init ();
 }

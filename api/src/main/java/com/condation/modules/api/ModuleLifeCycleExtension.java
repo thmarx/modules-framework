@@ -30,7 +30,7 @@ package com.condation.modules.api;
  *
  * @author marx
  */
-public abstract class ModuleLifeCycleExtension<C extends Context, R extends ModuleRequestContext> extends BaseExtension<C, R> {
+public abstract class ModuleLifeCycleExtension<C extends Context> extends BaseExtension<C> {
 	/** 
 	 * Called when the module is activated.
 	 */

@@ -55,6 +55,19 @@ public final class ModuleServiceLoader {
 		return new ModuleServiceLoader(loader);
 	}
 
+	public <S> List<Class<? extends S>> getClasses(Class<S> service) {
+		try {
+			return (List) providers.computeIfAbsent(service, clazz -> {
+				return initService(clazz);
+			}).stream()
+					.map(p -> p.type)
+					.toList();
+		} catch (Exception ex) {
+			log.error("", ex);
+		}
+		return Collections.emptyList();
+	}
+
 	public <S> List<S> get(Class<S> service) {
 		try {
 			return providers.computeIfAbsent(service, clazz -> {
